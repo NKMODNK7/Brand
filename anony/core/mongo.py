@@ -17,7 +17,7 @@ class MongoDB:
         Initialize the MongoDB connection.
         """
         self.mongo = AsyncMongoClient(config.MONGO_URL, serverSelectionTimeoutMS=12500)
-        self.db = self.mongo.Yukki
+        self.db = self.mongo.Anon
 
         self.admin_list = {}
         self.active_calls = {}
@@ -27,7 +27,6 @@ class MongoDB:
         self.notified = []
         self.cache = self.db.cache
         self.logger = False
-        self.leaving = False
 
         self.assistant = {}
         self.assistantdb = self.db.assistant
@@ -85,21 +84,6 @@ class MongoDB:
             self.admin_list[chat_id] = await reload_admins(chat_id)
         return self.admin_list[chat_id]
 
-    # AUTO LEAVE METHODS
-    async def auto_leave(self, check: bool = False) -> bool:
-        if check:
-            if doc := await self.cache.find_one({"_id": "auto_leave"}):
-                self.leaving = doc.get("status", False)
-        return self.leaving
-    
-    async def set_auto_leave(self, status: bool) -> None:
-        self.leaving = status
-        await self.cache.update_one(
-            {"_id": "auto_leave"},
-            {"$set": {"status": status}},
-            upsert=True,
-        )
-
     # AUTH METHODS
     async def _get_auth(self, chat_id: int) -> set[int]:
         if chat_id not in self.auth:
@@ -150,13 +134,7 @@ class MongoDB:
     async def get_client(self, chat_id: int):
         if chat_id not in self.assistant:
             await self.get_assistant(chat_id)
-        return {
-            1: userbot.one,
-            2: userbot.two,
-            3: userbot.three,
-            4: userbot.four,
-            5: userbot.five,
-        }.get(
+        return {1: userbot.one, 2: userbot.two, 3: userbot.three}.get(
             self.assistant[chat_id]
         )
 
@@ -318,7 +296,6 @@ class MongoDB:
 
 
     async def migrate_coll(self) -> None:
-        from bson import ObjectId
         logger.info("Migrating users and chats from old collections...")
 
         users, musers, mchats = [], [], []
@@ -327,10 +304,11 @@ class MongoDB:
         users.extend([user async for user in self.db.tgusersdb.find()])
 
         for user in users:
-            if isinstance(user.get("_id"), ObjectId):
-                user_id = int(user.get("user_id"))
+            _id = user.get("_id")
+            if isinstance(_id, int):
+                user_id = _id
             else:
-                user_id = int(user.get("_id"))
+                user_id = int(user.get("user_id"))
 
             if user_id in seen_users:
                 continue
@@ -343,10 +321,11 @@ class MongoDB:
             await self.usersdb.insert_many(musers)
 
         async for chat in self.chatsdb.find():
-            if isinstance(chat.get("_id"), ObjectId):
-                chat_id = int(chat.get("chat_id"))
+            _id = chat.get("_id")
+            if isinstance(_id, int):
+                chat_id = _id
             else:
-                chat_id = int(chat.get("_id"))
+                chat_id = int(chat.get("chat_id"))
 
             if chat_id in seen_chats:
                 continue
@@ -367,7 +346,6 @@ class MongoDB:
 
         await self.get_chats()
         await self.get_users()
-        await self.auto_leave(True)
         await self.get_blacklisted(True)
         await self.get_logger()
         logger.info("Database cache loaded.")
